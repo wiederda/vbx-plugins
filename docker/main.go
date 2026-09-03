@@ -401,9 +401,7 @@ func dockerResult(
 			)
 		}
 
-		return strResult(
-			"error: " + msg,
-		)
+		return errorResult(msg)
 	}
 
 	return strResult(
@@ -426,12 +424,10 @@ func dockerOK(
 			)
 		}
 
-		return strResult(
-			"error: " + msg,
-		)
+		return errorResult(msg)
 	}
 
-	return strResult("OK")
+	return boolResult(true)
 }
 
 // ============================================================
