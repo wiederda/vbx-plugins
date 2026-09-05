@@ -1,66 +1,111 @@
 # 🎲 rand.* – Zufallsfunktionen
 
-Dient zur Erzeugung pseudozufälliger Zahlen, Booleans und Array-Elemente.
+Dient zur Erzeugung pseudozufälliger Zahlen, Booleans und zufällig ausgewählter Array-Elemente.
+
 Nutzt `math/rand` mit einem zeitbasierten Seed. Für kryptografische Zwecke `crypt.*` verwenden.
 
 ---
 
 ## rand.Float()
-- **Konkret:**
-  Gibt eine Zufallszahl zwischen `0.0` und `1.0` zurück.
-- **Rückgabe:**
+
+* **Konkret:**
+
+  Gibt eine Zufallszahl im Bereich `[0.0, 1.0)` zurück.
+
+* **Rückgabe:**
+
   `NumVal`
 
 ---
 
 ## rand.Bool()
-- **Konkret:**
-  Gibt zufällig `true` oder `false` zurück (50/50).
-- **Rückgabe:**
+
+* **Konkret:**
+
+  Gibt zufällig `true` oder `false` zurück.
+
+* **Rückgabe:**
+
   `BoolVal`
 
 ---
 
 ## rand.Range(min, max)
-- **Konkret:**
+
+* **Konkret:**
+
   Gibt eine zufällige Ganzzahl zwischen `min` und `max` zurück (beide Grenzen inklusive).
-  Bei `max <= min` wird `min` zurückgegeben.
-- **Parameter:**
-  - `min`: Untere Grenze (inklusive).
-  - `max`: Obere Grenze (inklusive).
-- **Rückgabe:**
+
+  Bei `min = max` wird `min` zurückgegeben.
+
+* **Parameter:**
+
+  * `min`: Untere Grenze (inklusive).
+  * `max`: Obere Grenze (inklusive).
+
+* **Rückgabe:**
+
   `NumVal`
+
+  `ErrorVal`, wenn `max < min` ist oder ein Argument kein numerischer Wert ist.
 
 ---
 
 ## rand.RangeFloat(min, max)
-- **Konkret:**
+
+* **Konkret:**
+
   Gibt eine zufällige Fließkommazahl im Bereich `[min, max)` zurück.
-  Bei `max <= min` wird `min` zurückgegeben.
-- **Parameter:**
-  - `min`: Untere Grenze.
-  - `max`: Obere Grenze (exklusiv).
-- **Rückgabe:**
+
+  Bei `min = max` wird `min` zurückgegeben.
+
+* **Parameter:**
+
+  * `min`: Untere Grenze (inklusive).
+  * `max`: Obere Grenze (exklusiv).
+
+* **Rückgabe:**
+
   `NumVal`
+
+  `ErrorVal`, wenn `max < min` ist oder ein Argument kein numerischer Wert ist.
 
 ---
 
 ## rand.Choice(array)
-- **Konkret:**
+
+* **Konkret:**
+
   Wählt ein zufälliges Element aus einem Array aus.
-- **Parameter:**
-  - `array`: `ArrVal` mit mindestens einem Element.
-- **Rückgabe:**
-  Zufällig gewählter Wert aus dem Array, `ErrorVal` wenn das Array leer ist.
+
+* **Parameter:**
+
+  * `array`: `ArrVal` mit mindestens einem Element.
+
+* **Rückgabe:**
+
+  Zufällig gewählter Wert aus dem Array.
+
+  `ErrorVal`, wenn das Argument kein Array ist oder das Array leer ist.
 
 ---
 
 ## rand.Seed([n])
-- **Konkret:**
+
+* **Konkret:**
+
   Initialisiert den Zufallsgenerator mit einem Startwert.
-  Gleicher Seed erzeugt immer dieselbe Zufallsfolge (reproduzierbar).
-  Ohne Parameter wird der aktuelle Zeitstempel als Seed verwendet.
-- **Parameter:**
-  - `n`: Optional. Seed-Wert als Ganzzahl.
-- **Rückgabe:**
-  `NumVal` (verwendeter Seed, `0` bei automatischem Seed).
+
+  Derselbe Seed erzeugt immer dieselbe Zufallsfolge und ermöglicht damit reproduzierbare Ergebnisse.
+
+  Ohne Parameter wird der Zufallsgenerator mit dem aktuellen Zeitstempel initialisiert.
+
+* **Parameter:**
+
+  * `n`: Optional. Numerischer Seed-Wert.
+
+* **Rückgabe:**
+
+  `NumVal`
+
+  Der verwendete Seed. Bei automatischer Initialisierung ohne Parameter wird `0` zurückgegeben.

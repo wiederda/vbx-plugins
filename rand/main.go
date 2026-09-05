@@ -16,10 +16,8 @@ var liveBuffers = map[uint32][]byte{}
 
 var randGen = rand.New(rand.NewSource(time.Now().UnixNano()))
 
-//export alloc
 func alloc(size uint32) uint32 {
 	buf := make([]byte, size)
-
 	if size == 0 {
 		buf = make([]byte, 1)
 	}
@@ -30,13 +28,18 @@ func alloc(size uint32) uint32 {
 	return ptr
 }
 
-//export dealloc
+//go:wasmexport alloc
+func exportAlloc(size uint32) uint32 {
+	return alloc(size)
+}
+
+//go:wasmexport dealloc
 func dealloc(ptr uint32, size uint32) {
 	delete(liveBuffers, ptr)
 }
 
-//export vbx_abi_version
-func vbx_abi_version() int32 {
+//go:wasmexport vbx_abi_version
+func vbxABIVersion() uint32 {
 	return 1
 }
 
@@ -128,8 +131,8 @@ func valueResult(v jsonValue) []byte {
 // vbx_describe
 // ------------------------------------------------------------
 
-//export vbx_describe
-func vbx_describe() uint64 {
+//go:wasmexport vbx_describe
+func vbxDescribe() uint64 {
 	entries := []funcDesc{
 		{
 			Namespace:   "rand",
@@ -178,13 +181,8 @@ func vbx_describe() uint64 {
 // vbx_call
 // ------------------------------------------------------------
 
-//export vbx_call
-func vbx_call(
-	namePtr,
-	nameLen,
-	argsPtr,
-	argsLen uint32,
-) uint64 {
+//go:wasmexport vbx_call
+func vbxCall(namePtr, nameLen, argsPtr, argsLen uint32) uint64 {
 
 	name := string(readBytes(namePtr, nameLen))
 	argsJSON := readBytes(argsPtr, argsLen)

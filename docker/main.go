@@ -14,7 +14,6 @@ import (
 
 var liveBuffers map[uint32][]byte
 
-//export alloc
 func alloc(size uint32) uint32 {
 	if liveBuffers == nil {
 		liveBuffers = make(map[uint32][]byte)
@@ -32,7 +31,12 @@ func alloc(size uint32) uint32 {
 	return ptr
 }
 
-//export dealloc
+//go:wasmexport alloc
+func exportAlloc(size uint32) uint32 {
+	return alloc(size)
+}
+
+//go:wasmexport dealloc
 func dealloc(ptr uint32, size uint32) {
 	if liveBuffers == nil {
 		return
@@ -45,8 +49,8 @@ func dealloc(ptr uint32, size uint32) {
 // ABI
 // ============================================================
 
-//export vbx_abi_version
-func vbx_abi_version() int32 {
+//go:wasmexport vbx_abi_version
+func vbxABIVersion() int32 {
 	return 1
 }
 
@@ -2424,8 +2428,8 @@ func handleVolumeList(args []jsonValue) []byte {
 // vbx_describe
 // ============================================================
 
-//export vbx_describe
-func vbx_describe() uint64 {
+//go:wasmexport vbx_describe
+func vbxDescribe() uint64 {
 	desc := []funcDesc{
 
 		// --------------------------------------------------------
@@ -2680,8 +2684,8 @@ func vbx_describe() uint64 {
 // vbx_call
 // ============================================================
 
-//export vbx_call
-func vbx_call(
+//go:wasmexport vbx_call
+func vbxCall(
 	namePtr,
 	nameLen,
 	argsPtr,

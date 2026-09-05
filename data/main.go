@@ -12,7 +12,6 @@ import (
 
 var liveBuffers = map[uint32][]byte{}
 
-//export alloc
 func alloc(size uint32) uint32 {
 	buf := make([]byte, size)
 	if size == 0 {
@@ -21,16 +20,22 @@ func alloc(size uint32) uint32 {
 
 	ptr := uint32(uintptr(unsafe.Pointer(&buf[0])))
 	liveBuffers[ptr] = buf
+
 	return ptr
 }
 
-//export dealloc
+//go:wasmexport alloc
+func exportAlloc(size uint32) uint32 {
+	return alloc(size)
+}
+
+//go:wasmexport dealloc
 func dealloc(ptr uint32, size uint32) {
 	delete(liveBuffers, ptr)
 }
 
-//export vbx_abi_version
-func vbx_abi_version() int32 {
+//go:wasmexport vbx_abi_version
+func vbxABIVersion() uint32 {
 	return 1
 }
 
@@ -104,8 +109,8 @@ func errorResult(msg string) []byte {
 // vbx_describe
 // ------------------------------------------------------------
 
-//export vbx_describe
-func vbx_describe() uint64 {
+//go:wasmexport vbx_describe
+func vbxDescribe() uint64 {
 	entries := []funcDesc{
 
 		// Datenmengen - SI
@@ -217,8 +222,8 @@ func vbx_describe() uint64 {
 // vbx_call
 // ------------------------------------------------------------
 
-//export vbx_call
-func vbx_call(namePtr, nameLen, argsPtr, argsLen uint32) uint64 {
+//go:wasmexport vbx_call
+func vbxCall(namePtr, nameLen, argsPtr, argsLen uint32) uint64 {
 	name := string(readBytes(namePtr, nameLen))
 	argsJSON := readBytes(argsPtr, argsLen)
 

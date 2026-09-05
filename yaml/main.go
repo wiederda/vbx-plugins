@@ -13,66 +13,45 @@ import (
 )
 
 // ------------------------------------------------------------
-// Speicherverwaltung (Sicher für TinyGo)
-// ------------------------------------------------------------
-//
-// WICHTIG: liveBuffers wird bewusst NICHT mit einem Composite-Literal
-// (map[uint32][]byte{}) initialisiert. Ein solches Literal erzeugt
-// Go-Init-Code, der normalerweise vor main() läuft - bei diesem
-// Host läuft aber kein echter WASI-Reactor-Start (_start wird
-// übersprungen, siehe Kommentar unten), daher würde dieser Init-Code
-// nie ausgeführt und liveBuffers bliebe eine ECHTE nil-Map.
-// TinyGo's hashmapGet/hashmapBinaryGet paniken (anders als der
-// normale Go-Compiler) auch beim reinen LESEN einer solchen nil-Map.
-// Fix: Zero-Value-Deklaration + Lazy-Init beim ersten alloc()-Aufruf.
-//
-// Hintergrund _start: TinyGo ruft bei WASI-Modulen automatisch
-// "_start" auf, das nach main() sofort proc_exit(0) auslöst - der
-// Host instanziiert daher bewusst mit WithStartFunctions() (leer),
-// um genau das zu vermeiden. Nebenwirkung: package-level Initializer,
-// die echten Laufzeitcode brauchen (Maps, Slices mit Inhalt, Funktions-
-// aufrufe als Initializer), laufen dadurch nie. Diese Konvention
-// (Zero-Value + Lazy-Init) gilt für alle künftigen Plugins.
+// Speicherverwaltung
 // ------------------------------------------------------------
 
 var liveBuffers map[uint32][]byte
 
-//export alloc
 func alloc(size uint32) uint32 {
 	if liveBuffers == nil {
 		liveBuffers = make(map[uint32][]byte)
 	}
 
-	if size == 0 {
-		size = 1
-	}
-
 	buf := make([]byte, size)
 
-	ptr := uint32(uintptr(unsafe.Pointer(&buf[0])))
+	if size == 0 {
+		buf = make([]byte, 1)
+	}
 
+	ptr := uint32(uintptr(unsafe.Pointer(&buf[0])))
 	liveBuffers[ptr] = buf
 
 	return ptr
 }
 
-//export dealloc
-func dealloc(ptr uint32, size uint32) {
-	if liveBuffers == nil {
-		return
-	}
+//go:wasmexport alloc
+func exportAlloc(size uint32) uint32 {
+	return alloc(size)
+}
 
+//go:wasmexport dealloc
+func dealloc(ptr uint32, size uint32) {
 	delete(liveBuffers, ptr)
 }
 
-//export vbx_abi_version
-func vbx_abi_version() int32 {
+//go:wasmexport vbx_abi_version
+func vbxABIVersion() uint32 {
 	return 1
 }
 
 // ------------------------------------------------------------
 // Wire-Format
-// Muss mit der Host-Seite übereinstimmen
 // ------------------------------------------------------------
 
 type jsonValue struct {
@@ -343,10 +322,6 @@ func interfaceToJSONValue(v interface{}) jsonValue {
 
 // ------------------------------------------------------------
 // YAML -> Wire-Format
-//
-// yaml.v3 kann map[string]interface{} und
-// map[interface{}]interface{} liefern.
-// Wir normalisieren deshalb rekursiv.
 // ------------------------------------------------------------
 
 func normalizeYAMLValue(v interface{}) interface{} {
@@ -441,8 +416,8 @@ func jsonValueToYAML(v jsonValue) interface{} {
 // vbx_describe
 // ------------------------------------------------------------
 
-//export vbx_describe
-func vbx_describe() uint64 {
+//go:wasmexport vbx_describe
+func vbxDescribe() uint64 {
 	desc := `[
 		{
 			"namespace": "yaml",
@@ -483,13 +458,8 @@ func vbx_describe() uint64 {
 // vbx_call
 // ------------------------------------------------------------
 
-//export vbx_call
-func vbx_call(
-	namePtr,
-	nameLen,
-	argsPtr,
-	argsLen uint32,
-) uint64 {
+//go:wasmexport vbx_call
+func vbxCall(namePtr, nameLen, argsPtr, argsLen uint32) uint64 {
 
 	name := string(readBytes(namePtr, nameLen))
 	argsJSON := readBytes(argsPtr, argsLen)
@@ -631,49 +601,34 @@ func handleParseAll(args []jsonValue) []byte {
 // ------------------------------------------------------------
 
 func handleGet(args []jsonValue) []byte {
-
 	if len(args) < 2 {
-		return errorResult(
-			"Argumente fehlen",
-		)
+		return errorResult("Argumente fehlen")
 	}
 
 	if args[0].Type != "str" {
-		return errorResult(
-			"yaml.Get: YAML muss ein String sein",
-		)
+		return errorResult("yaml.Get: YAML muss ein String sein")
 	}
 
 	if args[1].Type != "str" {
-		return errorResult(
-			"yaml.Get: path muss ein String sein",
-		)
+		return errorResult("yaml.Get: path muss ein String sein")
 	}
 
 	var data interface{}
 
-	if err := yaml.Unmarshal(
-		[]byte(args[0].Str),
-		&data,
-	); err != nil {
+	if err := yaml.Unmarshal([]byte(args[0].Str), &data); err != nil {
 		return errorResult(err.Error())
 	}
 
 	data = normalizeYAMLValue(data)
 
-	val, ok := getValueByPath(
-		data,
-		splitPath(args[1].Str),
-	)
-
+	val, ok := getValueByPath(data, splitPath(args[1].Str))
 	if !ok {
-		// Entspricht Value{} der Host-Implementierung.
-		return valueResult(jsonValue{})
+		// Entspricht dem leeren Value{} der nativen Implementierung,
+		// aber mit einem definierten Wire-Typ.
+		return valueResult(jsonValue{Type: "null"})
 	}
 
-	return valueResult(
-		interfaceToJSONValue(val),
-	)
+	return valueResult(interfaceToJSONValue(val))
 }
 
 // ------------------------------------------------------------
@@ -753,7 +708,6 @@ func handleStringify(args []jsonValue) []byte {
 
 // ------------------------------------------------------------
 // GET
-// Navigiert rekursiv.
 // ------------------------------------------------------------
 
 func getValueByPath(
@@ -802,7 +756,6 @@ func getValueByPath(
 
 // ------------------------------------------------------------
 // SET
-// Schreibt Werte und baut Map-Pfade ggf. aus.
 // ------------------------------------------------------------
 
 func setValueByPath(
@@ -878,11 +831,6 @@ func setValueByPath(
 
 // ------------------------------------------------------------
 // splitPath
-//
-// Pfadsyntax:
-//   "server.port"
-//   "users.0.name"
-//   "database.host"
 // ------------------------------------------------------------
 
 func splitPath(path string) []string {
