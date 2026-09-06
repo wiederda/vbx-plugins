@@ -9,10 +9,21 @@ Ein Plugin stellt zusätzliche Funktionen über einen eigenen Namespace bereit. 
 
 | Plugin   | Namespace  | Beschreibung                                                                                     |
 | -------- | ---------- | ------------------------------------------------------------------------------------------------- |
+| `crypt`  | `crypt.*`  | Kryptografie- und Zufallsfunktionen (AES-GCM, HMAC, Bcrypt, Passwörter, GUIDs) — `Wipe`/`WipeString` liegen unter `string.*`, da sie technisch nicht als Plugin funktionieren können |                                                |
 | `docker` | `docker.*` | Funktionen zur Verwaltung von Docker-Containern, Images, Docker Compose, Netzwerken und Volumes  |
 | `fin`    | `fin.*`    | Finanz- und mathematische Funktionen, beispielsweise `Npv`, `Irr` und weitere Berechnungen       |
-| `yaml`   | `yaml.*`   | Funktionen zum Arbeiten mit YAML-Daten                                                           |
+| `ini`    | `ini.*`    | Funktionen zum Arbeiten mit INI-Daten                                                            |
+| `pgp`    | `pgp.*`    | PGP-Schlüsselerzeugung, Ver-/Entschlüsselung und digitale Signaturen                              |
+| `pqc`    | `pqc.*`    | Post-Quanten-Kryptografie (ML-KEM-768, ML-DSA-65) für Schlüsselaustausch und Signaturen           |
 | `rand`   | `rand.*`   | Funktionen zur Erzeugung von Zufallswerten                                                       |
+| `steg`   | `steg.*`   | Verstecken und Extrahieren von Daten in Bilddateien (Steganografie)                              |
+| `tar`    | `tar.*`    | Erstellen und Entpacken von TAR- und TAR.GZ-Archiven                                             | 
+| `xml`    | `xml.*`    | Laden, Bearbeiten, Speichern und Abfragen von XML-Dokumenten                                     |
+| `yaml`   | `yaml.*`   | Funktionen zum Arbeiten mit YAML-Daten                                                           |
+| `zip`    | `zip.*`    | Erstellen, Entpacken und Auflisten von ZIP-Archiven                                              |
+
+
+
 
 ## Verwendung
 
