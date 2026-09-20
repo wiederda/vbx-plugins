@@ -44,7 +44,48 @@ Print media.GetBitrate("song.mp3")   ' z. B. 320
 
 ---
 
-## media.ToMP3(input, output, [bitrate], [trimSilence])
+## media.GetDuration(input)
+
+Ermittelt die Dauer einer Mediendatei.
+
+| Parameter | Beschreibung |
+|---|---|
+| `input` | Pfad zur Mediendatei |
+
+**Rückgabe:** Dauer in Sekunden als Zahl (z. B. `754.56`), sonst `ErrorVal` (falls die Dauer nicht ermittelt werden konnte).
+
+```vbx
+Print media.GetDuration("song.mp3")   ' z. B. 213.4
+```
+
+---
+
+## media.GetInfo(file)
+
+Liefert Bitrate, Dauer und ob ein Cover eingebettet ist – in einem einzigen FFmpeg-Aufruf statt separater Aufrufe von `GetBitrate`, `GetDuration` und `IsCover`. Lohnt sich vor allem bei der Verarbeitung vieler Dateien (ein FFmpeg-Prozess statt drei pro Datei).
+
+| Parameter | Beschreibung |
+|---|---|
+| `file` | Pfad zur Mediendatei |
+
+**Rückgabe:** Map mit `bitrate` (Zahl, kbit/s), `duration` (Zahl, Sekunden), `hasCover` (Boolean). `ErrorVal`, falls Bitrate oder Dauer nicht ermittelt werden konnten.
+
+```vbx
+Dim files = folder.GetFiles("C:\Musik", "*.mp3", true, true)
+
+For Each f In files
+    Try
+        Dim info = media.GetInfo(f)
+        Print f & ": " & info["bitrate"] & " kbps, " & info["duration"] & "s, Cover: " & info["hasCover"]
+    Catch err
+        Print "Fehler bei " & f & ": " & ErrorText(err)
+    End Try
+Next
+```
+
+---
+
+## media.ToMP3(input, output, [bitrate], [trimSilence], [silenceThresholdDB], [silenceDurationSec])
 
 Konvertiert eine Audio- oder Videodatei nach MP3.
 
@@ -54,6 +95,8 @@ Konvertiert eine Audio- oder Videodatei nach MP3.
 | `output` | Zielpfad der MP3-Datei |
 | `bitrate` | Optional, Standard `192` (kbps). Muss größer als 0 sein. |
 | `trimSilence` | Optional, Standard `False`. Entfernt Stille am Anfang/Ende (siehe `media.TrimSilence`). |
+| `silenceThresholdDB` | Optional, Standard `-50`. Lautstärke-Schwellwert in dB, ab dem Audio als Stille gilt. Nur relevant, wenn `trimSilence=True`. |
+| `silenceDurationSec` | Optional, Standard `0.3`. Mindestdauer der Stille in Sekunden, damit sie erkannt wird. Nur relevant, wenn `trimSilence=True`. |
 
 **Rückgabe:** `"OK"` bei Erfolg, sonst `ErrorVal` mit der FFmpeg-Fehlermeldung.
 
@@ -65,6 +108,8 @@ Catch err
     Print "Fehler: " & ErrorText(err)
 End Try
 ```
+
+**Hinweis zu `trimSilence`:** Die Standardwerte passen nicht auf jedes Material – bei Aufnahmen mit hörbarem Grundrauschen (z. B. Hörspiele, Sprachaufnahmen) erkennt `-50dB` echte Stille oft nicht zuverlässig, sodass am Anfang/Ende noch Reste stehen bleiben. Mit `media.AnalyzeSilence` lässt sich vorab prüfen, welcher Schwellwert zum jeweiligen Material passt, bevor tatsächlich geschnitten wird.
 
 ---
 
@@ -78,6 +123,31 @@ Entfernt Stille am Anfang und Ende einer Audiodatei (Schwellwert -50 dB, mindest
 | `output` | Zieldatei (wird als MP3, 192 kbps, geschrieben) |
 
 **Rückgabe:** `"OK"` bei Erfolg, sonst `ErrorVal`.
+
+---
+
+## media.AnalyzeSilence(file, [thresholdDB], [durationSec], [maxSeconds])
+
+Diagnose-Funktion: erkennt Stille-Abschnitte im Material, **ohne** etwas zu schneiden. Dient zum Kalibrieren der Schwellwerte für `ToMP3`/`TrimSilence`, bevor tatsächlich geschnitten wird.
+
+| Parameter | Beschreibung |
+|---|---|
+| `file` | Mediendatei |
+| `thresholdDB` | Optional, Standard `-50`. Zu testender Lautstärke-Schwellwert in dB. |
+| `durationSec` | Optional, Standard `0.3`. Mindestdauer der Stille in Sekunden. |
+| `maxSeconds` | Optional, Standard `60`. Begrenzt die Analyse auf die ersten X Sekunden der Datei – bei langem Material reicht das zum Kalibrieren des Anfangs und spart Zeit gegenüber einer Analyse der kompletten Datei. |
+
+**Rückgabe:** Array von Maps mit `start`, `end` und `duration` (jeweils in Sekunden, auf 0,1s gerundet) für jeden erkannten Stille-Abschnitt. `ErrorVal` bei FFmpeg-Fehler.
+
+```vbx
+Dim periods = media.AnalyzeSilence("hoerspiel.mp3", -35, 0.3, 30)
+
+For Each p In periods
+    Print "Stille von " & p["start"] & "s bis " & p["end"] & "s (Dauer: " & p["duration"] & "s)"
+Next
+```
+
+Mehrere Schwellwerte (z. B. `-50`, `-40`, `-35`, `-30`) durchprobieren und vergleichen, bei welchem Wert der Anfangsbereich sauber erkannt wird, ohne schon in die eigentliche Aufnahme reinzuschneiden.
 
 ---
 
@@ -179,6 +249,33 @@ Wie `media.GetTag`, aber für mehrere Dateien auf einmal.
 | `tag` | Optional. Tag-Name. Ohne Angabe: alle Tags pro Datei. |
 
 **Rückgabe:** Array – ein Eintrag pro Datei (String bei einzelnem Tag, Map bei allen Tags). `ErrorVal`, sobald bei einer Datei ein FFmpeg-Fehler auftritt (Verarbeitung der restlichen Dateien wird dann abgebrochen).
+
+---
+
+## media.CheckTags(file, tags)
+
+Prüft, ob alle angegebenen Tags gesetzt und nicht leer sind.
+
+| Parameter | Beschreibung |
+|---|---|
+| `file` | Mediendatei |
+| `tags` | Array von Tag-Namen (Alias oder kanonisch), die geprüft werden sollen |
+
+**Rückgabe:** Der Dateipfad selbst, sobald **einer** der angegebenen Tags fehlt oder leer ist (praktisch zum direkten Sammeln unvollständiger Dateien in ein Array); ein leerer String, wenn alle angegebenen Tags gesetzt sind. `ErrorVal` bei FFmpeg-Fehler oder nicht unterstütztem Tag-Namen.
+
+```vbx
+Dim files = folder.GetFiles("C:\Musik", "*.mp3", true, true)
+Dim unvollstaendig = array.Create()
+
+For Each f In files
+    Dim missing = media.CheckTags(f, {"artist", "album", "genre"})
+    If missing <> "" Then
+        unvollstaendig = array.Add(unvollstaendig, missing)
+    End If
+Next
+
+Print "Dateien mit fehlenden Tags: " & array.Count(unvollstaendig)
+```
 
 ---
 

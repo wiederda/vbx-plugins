@@ -3,6 +3,7 @@ package main
 import (
 	"encoding/json"
 	"fmt"
+	"math"
 	"strconv"
 	"strings"
 	"time"
@@ -642,6 +643,126 @@ func splitMediaPath(
 }
 
 // ============================================================
+// Dauer aus FFmpeg-Ausgabe lesen
+//
+// Typische FFmpeg-Ausgabe:
+//   Duration: 00:12:34.56, start: 0.000000, bitrate: 320 kb/s
+// ============================================================
+
+func findDuration(text string) (float64, bool) {
+
+	idx := strings.Index(text, "Duration:")
+	if idx < 0 {
+		return 0, false
+	}
+
+	part := text[idx+len("Duration:"):]
+	part = strings.TrimSpace(part)
+
+	comma := strings.Index(part, ",")
+	if comma < 0 {
+		return 0, false
+	}
+	timeStr := strings.TrimSpace(part[:comma])
+
+	if timeStr == "N/A" {
+		return 0, false
+	}
+
+	segments := strings.Split(timeStr, ":")
+	if len(segments) != 3 {
+		return 0, false
+	}
+
+	hours, err1 := strconv.Atoi(segments[0])
+	minutes, err2 := strconv.Atoi(segments[1])
+	seconds, err3 := strconv.ParseFloat(segments[2], 64)
+
+	if err1 != nil || err2 != nil || err3 != nil {
+		return 0, false
+	}
+
+	total := float64(hours)*3600 + float64(minutes)*60 + seconds
+	return total, true
+}
+
+// ============================================================
+// media.GetDuration(input)
+// ============================================================
+
+func handleGetDuration(args []jsonValue) []byte {
+
+	input, errResult := requireString(args, 0, "media.GetDuration")
+	if errResult != nil {
+		return errResult
+	}
+
+	if len(args) > 1 {
+		return errorResult("media.GetDuration erwartet 1 Argument")
+	}
+
+	result, err := ffmpegExec([]string{"-hide_banner", "-i", input})
+	if err != nil {
+		return errorResult(err.Error())
+	}
+
+	duration, ok := findDuration(result.Stderr)
+	if !ok {
+		return errorResult("media.GetDuration: Dauer konnte nicht ermittelt werden")
+	}
+
+	return numResult(duration)
+}
+
+// ============================================================
+// media.GetInfo(file)
+//
+// Bündelt Bitrate, Dauer und Cover-Prüfung in einem einzigen
+// FFmpeg-Aufruf, statt GetBitrate/GetDuration/IsCover einzeln
+// aufzurufen (spart bei Batch-Verarbeitung über viele Dateien
+// zwei Drittel der FFmpeg-Prozessstarts).
+//
+// Konsistent zu GetBitrate/GetDuration: kann eine der beiden
+// Kennzahlen nicht ermittelt werden, liefert GetInfo einen
+// ErrorVal statt eines stillen Platzhalterwerts.
+// ============================================================
+
+func handleGetInfo(args []jsonValue) []byte {
+
+	file, errResult := requireString(args, 0, "media.GetInfo")
+	if errResult != nil {
+		return errResult
+	}
+
+	if len(args) > 1 {
+		return errorResult("media.GetInfo erwartet 1 Argument")
+	}
+
+	result, err := ffmpegExec([]string{"-hide_banner", "-i", file})
+	if err != nil {
+		return errorResult(err.Error())
+	}
+
+	bitrate, ok := findAudioBitrate(result.Stderr)
+	if !ok {
+		return errorResult("media.GetInfo: Bitrate konnte nicht ermittelt werden")
+	}
+
+	duration, ok := findDuration(result.Stderr)
+	if !ok {
+		return errorResult("media.GetInfo: Dauer konnte nicht ermittelt werden")
+	}
+
+	info := map[string]jsonValue{
+		"bitrate":  {Type: "num", Num: float64(bitrate)},
+		"duration": {Type: "num", Num: duration},
+		"hasCover": {Type: "bool", Bool: strings.Contains(result.Stderr, "Video:")},
+	}
+
+	return mapResult(info)
+}
+
+// ============================================================
 // Temporären Dateinamen erzeugen
 // ============================================================
 
@@ -923,6 +1044,66 @@ func findAudioBitrate(text string) (int, bool) {
 }
 
 // ============================================================
+// media.CheckTags(file, tags)
+//
+// Prüft, ob alle angegebenen Tags gesetzt und nicht leer sind.
+// Gibt bei fehlendem/leerem Tag den Dateipfad selbst zurück
+// (nützlich zum direkten Sammeln in ein Array), sonst "".
+// ============================================================
+
+func handleCheckTags(args []jsonValue) []byte {
+
+	file, errResult := requireString(args, 0, "media.CheckTags")
+	if errResult != nil {
+		return errResult
+	}
+
+	if len(args) != 2 {
+		return errorResult("media.CheckTags erwartet 2 Argumente")
+	}
+
+	tagNames, errResult := requireStringArray(args[1], "media.CheckTags")
+	if errResult != nil {
+		return errResult
+	}
+
+	canonical := make([]string, 0, len(tagNames))
+	for _, n := range tagNames {
+		key, ok := resolveTagAlias(n)
+		if !ok {
+			return errorResult(fmt.Sprintf("Tag wird aktuell nicht unterstützt: %s", n))
+		}
+		canonical = append(canonical, key)
+	}
+
+	ffmpegArgs := []string{
+		"-hide_banner", "-loglevel", "error",
+		"-i", file,
+		"-map_metadata", "0",
+		"-f", "ffmetadata", "-",
+	}
+
+	result, err := ffmpegExec(ffmpegArgs)
+	if err != nil {
+		return errorResult(err.Error())
+	}
+	if result.Code != 0 {
+		return ffmpegError(result)
+	}
+
+	tags := parseFFMetadata(result.Stdout)
+
+	for _, key := range canonical {
+		value, ok := findTag(tags, key)
+		if !ok || strings.TrimSpace(value.Str) == "" {
+			return strResult(file)
+		}
+	}
+
+	return strResult("")
+}
+
+// ============================================================
 // media.IsValid(input)
 // ============================================================
 
@@ -980,14 +1161,31 @@ func handleIsValid(
 // Silence Filter
 // ============================================================
 
-func silenceFilter() string {
-	return "silenceremove=" +
-		"start_periods=1:" +
-		"start_duration=0.5:" +
-		"start_threshold=-50dB:" +
-		"stop_periods=1:" +
-		"stop_duration=0.5:" +
-		"stop_threshold=-50dB"
+// ============================================================
+// Silence Filter
+//
+// WICHTIG: silenceremove mit stop_periods=1 in einem einzigen
+// Durchlauf schneidet NICHT nur das Ende ab, sondern verwirft
+// alles ab der ERSTEN gefundenen Stille-Periode im gesamten
+// Stream. Bei Material mit Pausen mittendrin (Hörspiele,
+// Sprachaufnahmen, Interviews) führt das dazu, dass der Großteil
+// der Datei fälschlich abgeschnitten wird.
+//
+// Der korrekte Ansatz: Stille am Anfang entfernen, Audio
+// umkehren, den (jetzt am Anfang liegenden) ursprünglichen
+// Schluss ebenfalls von Stille befreien, wieder umkehren. So
+// wird nie mitten im Stream geschnitten - nur an den beiden
+// tatsächlichen Rändern.
+// ============================================================
+
+func silenceFilter(thresholdDB int, durationSec float64) string {
+	threshold := fmt.Sprintf("%ddB", thresholdDB)
+	duration := fmt.Sprintf("%g", durationSec)
+
+	return "silenceremove=start_periods=1:start_duration=" + duration + ":start_threshold=" + threshold + ":detection=peak," +
+		"areverse," +
+		"silenceremove=start_periods=1:start_duration=" + duration + ":start_threshold=" + threshold + ":detection=peak," +
+		"areverse"
 }
 
 // ============================================================
@@ -1041,10 +1239,23 @@ func handleToMP3(
 		)
 	}
 
-	if len(args) > 4 {
+	if len(args) > 6 {
 		return errorResult(
-			"media.ToMP3 erwartet maximal 4 Argumente",
+			"media.ToMP3 erwartet maximal 6 Argumente",
 		)
+	}
+
+	silenceThreshold := -50
+	if len(args) > 4 {
+		silenceThreshold = valueInt(args[4], -50)
+	}
+
+	silenceDuration := 0.3
+	if len(args) > 5 {
+		d := args[5].Num
+		if d > 0 {
+			silenceDuration = d
+		}
 	}
 
 	ffmpegArgs := []string{
@@ -1062,7 +1273,7 @@ func handleToMP3(
 		ffmpegArgs = append(
 			ffmpegArgs,
 			"-af",
-			silenceFilter(),
+			silenceFilter(silenceThreshold, silenceDuration),
 		)
 	}
 
@@ -1086,6 +1297,66 @@ func handleToMP3(
 	}
 
 	return strResult("OK")
+}
+
+func round1(v float64) float64 {
+	return math.Round(v*10) / 10
+}
+
+// ============================================================
+// silencedetect-Ausgabe parsen
+//
+// Typische Zeilen:
+//   [silencedetect @ 0x...] silence_start: 1.234
+//   [silencedetect @ 0x...] silence_end: 2.456 | silence_duration: 1.222
+// ============================================================
+
+func parseSilenceDetect(text string) []jsonValue {
+
+	var periods []jsonValue
+	var currentStart float64
+	haveStart := false
+
+	for _, line := range strings.Split(text, "\n") {
+		line = strings.TrimSpace(line)
+
+		if idx := strings.Index(line, "silence_start:"); idx >= 0 {
+			valStr := strings.TrimSpace(line[idx+len("silence_start:"):])
+			if v, err := strconv.ParseFloat(valStr, 64); err == nil {
+				currentStart = v
+				haveStart = true
+			}
+			continue
+		}
+
+		if idx := strings.Index(line, "silence_end:"); idx >= 0 && haveStart {
+			rest := line[idx+len("silence_end:"):]
+
+			endStr := rest
+			if pipeIdx := strings.Index(rest, "|"); pipeIdx >= 0 {
+				endStr = rest[:pipeIdx]
+			}
+			endStr = strings.TrimSpace(endStr)
+
+			endVal, err := strconv.ParseFloat(endStr, 64)
+			if err != nil {
+				continue
+			}
+
+			periods = append(periods, jsonValue{
+				Type: "map",
+				Map: map[string]jsonValue{
+					"start":    {Type: "num", Num: round1(currentStart)},
+					"end":      {Type: "num", Num: round1(endVal)},
+					"duration": {Type: "num", Num: round1(endVal - currentStart)},
+				},
+			})
+
+			haveStart = false
+		}
+	}
+
+	return periods
 }
 
 // ============================================================
@@ -1116,10 +1387,23 @@ func handleTrimSilence(
 		return errResult
 	}
 
-	if len(args) > 2 {
+	if len(args) > 4 {
 		return errorResult(
-			"media.TrimSilence erwartet 2 Argumente",
+			"media.TrimSilence erwartet maximal 4 Argumente",
 		)
+	}
+
+	silenceThreshold := -50
+	if len(args) > 2 {
+		silenceThreshold = valueInt(args[2], -50)
+	}
+
+	silenceDuration := 0.3
+	if len(args) > 3 {
+		d := args[3].Num
+		if d > 0 {
+			silenceDuration = d
+		}
 	}
 
 	ffmpegArgs := []string{
@@ -1128,7 +1412,7 @@ func handleTrimSilence(
 		input,
 		"-vn",
 		"-af",
-		silenceFilter(),
+		silenceFilter(silenceThreshold, silenceDuration),
 		"-codec:a",
 		"libmp3lame",
 		"-b:a",
@@ -2480,6 +2764,64 @@ func coverFFmpegError(
 }
 
 // ============================================================
+// media.AnalyzeSilence(file, [thresholdDB], [durationSec], [maxSeconds])
+//
+// Diagnose-Funktion: erkennt Stille-Abschnitte im Material,
+// OHNE etwas zu schneiden. maxSeconds begrenzt die Analyse auf
+// den Anfang der Datei (Standard 60s) - bei langem Material
+// (Hörspiele) reicht das für die Kalibrierung des Anfangs völlig
+// aus und spart die Zeit, die komplette Datei zu verarbeiten.
+// Zeitangaben werden auf 0,1s gerundet.
+// ============================================================
+
+func handleAnalyzeSilence(args []jsonValue) []byte {
+
+	file, errResult := requireString(args, 0, "media.AnalyzeSilence")
+	if errResult != nil {
+		return errResult
+	}
+
+	thresholdDB := -50
+	if len(args) > 1 {
+		thresholdDB = valueInt(args[1], -50)
+	}
+
+	durationSec := 0.3
+	if len(args) > 2 {
+		d := args[2].Num
+		if d > 0 {
+			durationSec = d
+		}
+	}
+
+	maxSeconds := 60
+	if len(args) > 3 {
+		m := valueInt(args[3], 60)
+		if m > 0 {
+			maxSeconds = m
+		}
+	}
+
+	filter := fmt.Sprintf("silencedetect=noise=%ddB:d=%g", thresholdDB, durationSec)
+
+	result, err := ffmpegExec([]string{
+		"-hide_banner",
+		"-i", file,
+		"-t", strconv.Itoa(maxSeconds),
+		"-af", filter,
+		"-f", "null",
+		"-",
+	})
+	if err != nil {
+		return errorResult(err.Error())
+	}
+
+	periods := parseSilenceDetect(result.Stderr)
+
+	return arrayResult(periods)
+}
+
+// ============================================================
 // media.GetCover(file, output)
 //
 // Extrahiert das eingebettete MP3-Cover als JPG.
@@ -2644,6 +2986,34 @@ func vbxDescribe() uint64 {
 
 		{
 			Namespace:   "media",
+			Name:        "CheckTags",
+			Params:      "file, tags",
+			Description: "Prüft, ob alle angegebenen Tags gesetzt und nicht leer sind. Gibt bei einem fehlenden Tag den Dateipfad zurück, sonst einen leeren String.",
+		},
+
+		{
+			Namespace:   "media",
+			Name:        "AnalyzeSilence",
+			Params:      "file, [thresholdDB], [durationSec], [maxSeconds]",
+			Description: "Erkennt Stille-Abschnitte im Material (ohne zu schneiden), begrenzt auf die ersten maxSeconds Sekunden (Standard 60). Zum Kalibrieren der Trimm-Schwellwerte vor dem eigentlichen Schneiden mit ToMP3/TrimSilence.",
+		},
+
+		{
+			Namespace:   "media",
+			Name:        "GetDuration",
+			Params:      "input",
+			Description: "Ermittelt die Dauer einer Mediendatei in Sekunden.",
+		},
+
+		{
+			Namespace:   "media",
+			Name:        "GetInfo",
+			Params:      "file",
+			Description: "Liefert Bitrate (kbit/s), Dauer (Sekunden) und ob ein Cover eingebettet ist, in einem einzigen FFmpeg-Aufruf (Map mit bitrate/duration/hasCover).",
+		},
+
+		{
+			Namespace:   "media",
 			Name:        "Tags",
 			Params:      "[name|names]",
 			Description: "Übersetzt einen deutschen oder englischen Tag-Namen in den kanonischen internen Tag-Namen. Einzelne Namen werden als String, mehrere Namen als Array zurückgegeben. Ohne Argument werden alle kanonischen Tag-Namen zurückgegeben.",
@@ -2782,6 +3152,18 @@ func vbxCall(
 
 	case "IsCover":
 		result = handleIsCover(args)
+
+	case "CheckTags":
+		result = handleCheckTags(args)
+
+	case "AnalyzeSilence":
+		result = handleAnalyzeSilence(args)
+
+	case "GetDuration":
+		result = handleGetDuration(args)
+
+	case "GetInfo":
+		result = handleGetInfo(args)
 
 	case "Tags":
 		result = handleTags(args)
