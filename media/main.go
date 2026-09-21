@@ -3,7 +3,6 @@ package main
 import (
 	"encoding/json"
 	"fmt"
-	"math"
 	"strconv"
 	"strings"
 	"time"
@@ -1297,66 +1296,6 @@ func handleToMP3(
 	}
 
 	return strResult("OK")
-}
-
-func round1(v float64) float64 {
-	return math.Round(v*10) / 10
-}
-
-// ============================================================
-// silencedetect-Ausgabe parsen
-//
-// Typische Zeilen:
-//   [silencedetect @ 0x...] silence_start: 1.234
-//   [silencedetect @ 0x...] silence_end: 2.456 | silence_duration: 1.222
-// ============================================================
-
-func parseSilenceDetect(text string) []jsonValue {
-
-	var periods []jsonValue
-	var currentStart float64
-	haveStart := false
-
-	for _, line := range strings.Split(text, "\n") {
-		line = strings.TrimSpace(line)
-
-		if idx := strings.Index(line, "silence_start:"); idx >= 0 {
-			valStr := strings.TrimSpace(line[idx+len("silence_start:"):])
-			if v, err := strconv.ParseFloat(valStr, 64); err == nil {
-				currentStart = v
-				haveStart = true
-			}
-			continue
-		}
-
-		if idx := strings.Index(line, "silence_end:"); idx >= 0 && haveStart {
-			rest := line[idx+len("silence_end:"):]
-
-			endStr := rest
-			if pipeIdx := strings.Index(rest, "|"); pipeIdx >= 0 {
-				endStr = rest[:pipeIdx]
-			}
-			endStr = strings.TrimSpace(endStr)
-
-			endVal, err := strconv.ParseFloat(endStr, 64)
-			if err != nil {
-				continue
-			}
-
-			periods = append(periods, jsonValue{
-				Type: "map",
-				Map: map[string]jsonValue{
-					"start":    {Type: "num", Num: round1(currentStart)},
-					"end":      {Type: "num", Num: round1(endVal)},
-					"duration": {Type: "num", Num: round1(endVal - currentStart)},
-				},
-			})
-
-			haveStart = false
-		}
-	}
-
-	return periods
 }
 
 // ============================================================
@@ -2763,72 +2702,6 @@ func coverFFmpegError(
 	return msg
 }
 
-// ============================================================
-// media.AnalyzeSilence(file, [thresholdDB], [durationSec], [maxSeconds])
-//
-// Diagnose-Funktion: erkennt Stille-Abschnitte im Material,
-// OHNE etwas zu schneiden. maxSeconds begrenzt die Analyse auf
-// den Anfang der Datei (Standard 60s) - bei langem Material
-// (Hörspiele) reicht das für die Kalibrierung des Anfangs völlig
-// aus und spart die Zeit, die komplette Datei zu verarbeiten.
-// Zeitangaben werden auf 0,1s gerundet.
-// ============================================================
-
-func handleAnalyzeSilence(args []jsonValue) []byte {
-
-	file, errResult := requireString(args, 0, "media.AnalyzeSilence")
-	if errResult != nil {
-		return errResult
-	}
-
-	thresholdDB := -50
-	if len(args) > 1 {
-		thresholdDB = valueInt(args[1], -50)
-	}
-
-	durationSec := 0.3
-	if len(args) > 2 {
-		d := args[2].Num
-		if d > 0 {
-			durationSec = d
-		}
-	}
-
-	maxSeconds := 60
-	if len(args) > 3 {
-		m := valueInt(args[3], 60)
-		if m > 0 {
-			maxSeconds = m
-		}
-	}
-
-	filter := fmt.Sprintf("silencedetect=noise=%ddB:d=%g", thresholdDB, durationSec)
-
-	result, err := ffmpegExec([]string{
-		"-hide_banner",
-		"-i", file,
-		"-t", strconv.Itoa(maxSeconds),
-		"-af", filter,
-		"-f", "null",
-		"-",
-	})
-	if err != nil {
-		return errorResult(err.Error())
-	}
-
-	periods := parseSilenceDetect(result.Stderr)
-
-	return arrayResult(periods)
-}
-
-// ============================================================
-// media.GetCover(file, output)
-//
-// Extrahiert das eingebettete MP3-Cover als JPG.
-//
-// Die Ausgabe wird als JPEG erzeugt.
-// ============================================================
-
 func handleGetCover(
 	args []jsonValue,
 ) []byte {
@@ -2993,13 +2866,6 @@ func vbxDescribe() uint64 {
 
 		{
 			Namespace:   "media",
-			Name:        "AnalyzeSilence",
-			Params:      "file, [thresholdDB], [durationSec], [maxSeconds]",
-			Description: "Erkennt Stille-Abschnitte im Material (ohne zu schneiden), begrenzt auf die ersten maxSeconds Sekunden (Standard 60). Zum Kalibrieren der Trimm-Schwellwerte vor dem eigentlichen Schneiden mit ToMP3/TrimSilence.",
-		},
-
-		{
-			Namespace:   "media",
 			Name:        "GetDuration",
 			Params:      "input",
 			Description: "Ermittelt die Dauer einer Mediendatei in Sekunden.",
@@ -3155,9 +3021,6 @@ func vbxCall(
 
 	case "CheckTags":
 		result = handleCheckTags(args)
-
-	case "AnalyzeSilence":
-		result = handleAnalyzeSilence(args)
 
 	case "GetDuration":
 		result = handleGetDuration(args)

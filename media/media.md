@@ -128,31 +128,6 @@ Entfernt Stille am Anfang und Ende einer Audiodatei (Schwellwert -50 dB, mindest
 
 ---
 
-## media.AnalyzeSilence(file, [thresholdDB], [durationSec], [maxSeconds])
-
-Diagnose-Funktion: erkennt Stille-Abschnitte im Material, **ohne** etwas zu schneiden. Dient zum Kalibrieren der Schwellwerte für `ToMP3`/`TrimSilence`, bevor tatsächlich geschnitten wird.
-
-| Parameter | Beschreibung |
-|---|---|
-| `file` | Mediendatei |
-| `thresholdDB` | Optional, Standard `-50`. Zu testender Lautstärke-Schwellwert in dB. |
-| `durationSec` | Optional, Standard `0.3`. Mindestdauer der Stille in Sekunden. |
-| `maxSeconds` | Optional, Standard `60`. Begrenzt die Analyse auf die ersten X Sekunden der Datei – bei langem Material reicht das zum Kalibrieren des Anfangs und spart Zeit gegenüber einer Analyse der kompletten Datei. |
-
-**Rückgabe:** Array von Maps mit `start`, `end` und `duration` (jeweils in Sekunden, auf 0,1s gerundet) für jeden erkannten Stille-Abschnitt. `ErrorVal` bei FFmpeg-Fehler.
-
-```vbx
-Dim periods = media.AnalyzeSilence("hoerspiel.mp3", -35, 0.3, 30)
-
-For Each p In periods
-    Print "Stille von " & p["start"] & "s bis " & p["end"] & "s (Dauer: " & p["duration"] & "s)"
-Next
-```
-
-Mehrere Schwellwerte (z. B. `-50`, `-40`, `-35`, `-30`) durchprobieren und vergleichen, bei welchem Wert der Anfangsbereich sauber erkannt wird, ohne schon in die eigentliche Aufnahme reinzuschneiden.
-
----
-
 ## media.Merge(files, output, [bitrate])
 
 Fügt mehrere Audiodateien in der angegebenen Reihenfolge zu einer MP3-Datei zusammen.
