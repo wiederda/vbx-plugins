@@ -1,6 +1,8 @@
 # 🔐 crypt.* – Kryptografie- & Zufallsfunktionen
 
-Dient zur kryptografisch sicheren Erzeugung von Zufallswerten, Passwörtern und GUIDs sowie zur AES-256-GCM-Verschlüsselung von Text und Dateien.
+Dieses Modul wird als **Plugin** bereitgestellt. Weitere Informationen stehen in **Allgemein**.
+
+Es dient zur kryptografisch sicheren Erzeugung von Zufallswerten, Passwörtern und GUIDs sowie zur AES-256-GCM-Verschlüsselung von Text und Dateien.
 Alle Zufallsoperationen nutzen `crypto/rand` (kein `math/rand`).
 
 ---

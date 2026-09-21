@@ -1,5 +1,7 @@
 # 🎵 media.* – Audio/Video-Funktionen
 
+Dieses Modul wird als **Plugin** bereitgestellt. Weitere Informationen stehen in **Allgemein**.
+
 **Voraussetzung:** FFmpeg muss installiert sein. Standardmäßig wird `ffmpeg` (Linux/Mac) bzw. `ffmpeg.exe` (Windows) über den System-PATH gesucht. Über die Umgebungsvariable `VBX_FFMPEG` kann stattdessen ein expliziter Pfad zur FFmpeg-ausführbaren Datei angegeben werden (z. B. wenn FFmpeg nicht im PATH liegt oder eine bestimmte Version verwendet werden soll):
 
 ```

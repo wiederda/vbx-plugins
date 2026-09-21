@@ -1,6 +1,8 @@
 # 📊 data.* – Konvertierungsfunktionen
 
-Das `data`-Plugin stellt Funktionen zur Umrechnung von Datenmengen, Leistungs- und Zeiteinheiten sowie zur Formatierung von Sekunden bereit.
+Dieses Modul wird als **Plugin** bereitgestellt. Weitere Informationen stehen in **Allgemein**.
+
+Es stellt Funktionen zur Umrechnung von Datenmengen, Leistungs- und Zeiteinheiten sowie zur Formatierung von Sekunden bereit.
 
 ---
 

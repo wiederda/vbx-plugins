@@ -1,8 +1,9 @@
 # 🐳 docker.* – Docker-Funktionen
 
-Dient zur Verwaltung von Docker-Containern, Images, Compose-Projekten und Systemressourcen.
+Dieses Modul wird als **Plugin** bereitgestellt. Weitere Informationen stehen in **Allgemein**.
+
+Es dient zur Verwaltung von Docker-Containern, Images, Compose-Projekten und Systemressourcen.
 Erfordert eine installierte und laufende Docker-Installation.
-Alle Funktionen rufen intern `docker`-CLI-Befehle auf.
 
 ---
 

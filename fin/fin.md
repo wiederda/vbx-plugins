@@ -1,6 +1,8 @@
 # 💰 fin.* – Finanz- & wissenschaftliche Funktionen
 
-Dient zur Berechnung finanzmathematischer Kennzahlen sowie wissenschaftlicher Funktionen.
+Dieses Modul wird als **Plugin** bereitgestellt. Weitere Informationen stehen in **Allgemein**.
+
+Es dient zur Berechnung finanzmathematischer Kennzahlen sowie wissenschaftlicher Funktionen.
 
 ---
 

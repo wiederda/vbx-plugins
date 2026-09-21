@@ -1,8 +1,9 @@
 # 🎲 rand.* – Zufallsfunktionen
 
-Dient zur Erzeugung pseudozufälliger Zahlen, Booleans und zufällig ausgewählter Array-Elemente.
+Dieses Modul wird als **Plugin** bereitgestellt. Weitere Informationen stehen in **Allgemein**.
 
-Nutzt `math/rand` mit einem zeitbasierten Seed. Für kryptografische Zwecke `crypt.*` verwenden.
+Es dient zur Erzeugung pseudozufälliger Zahlen, Booleans und zufällig ausgewählter Array-Elemente.
+Für kryptografische Zwecke `crypt.*` verwenden.
 
 ---
 

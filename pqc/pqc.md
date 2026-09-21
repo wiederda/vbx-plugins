@@ -1,6 +1,8 @@
 # 🔐 pqc.* – Post-Quantum-Kryptografiefunktionen
 
-Dient zur quantensicheren Verschlüsselung und digitalen Signierung.
+Dieses Modul wird als **Plugin** bereitgestellt. Weitere Informationen stehen in **Allgemein**.
+
+Es dient zur quantensicheren Verschlüsselung und digitalen Signierung.
 Nutzt **ML-KEM-768** (CRYSTALS-Kyber) für Schlüsselaustausch und **ML-DSA-65** (CRYSTALS-Dilithium) für Signaturen.
 Alle Schlüssel werden als Base64-Strings übergeben und zurückgegeben.
 Private Keys auf der Festplatte werden mit AES-256-GCM + Argon2id verschlüsselt.

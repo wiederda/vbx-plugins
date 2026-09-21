@@ -1,6 +1,8 @@
 # 📄 xml.* – XML-Funktionen
 
-Dient zum Laden, Lesen, Schreiben und Validieren von XML-Dateien.
+Dieses Modul wird als **Plugin** bereitgestellt. Weitere Informationen stehen in **Allgemein**.
+
+Es dient zum Laden, Lesen, Schreiben und Validieren von XML-Dateien.
 Arbeitet mit einem internen Dokumenten-Zustand – `xml.Load` muss vor allen anderen Operationen aufgerufen werden.
 Pfade werden mit Punkt-Notation angegeben. Index-Zugriff auf gleichnamige Geschwisterknoten: `user[1]`.
 Thread-sicher via `sync.RWMutex`.

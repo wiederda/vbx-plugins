@@ -1,6 +1,8 @@
 # 📄 yaml.* – YAML-Funktionen
 
-Dient zur Validierung, Abfrage und Manipulation von YAML-Strukturen.
+Dieses Modul wird als **Plugin** bereitgestellt. Weitere Informationen stehen in **Allgemein**.
+
+Es dient zur Validierung, Abfrage und Manipulation von YAML-Strukturen.
 Pfadangaben nutzen Punkt-Notation für Maps und numerische Indizes für Arrays.
 
 ---

@@ -1,6 +1,8 @@
 # ⚙️ ini.* – INI-Konfigurationsdatei-Funktionen
 
-Dient zum Lesen, Schreiben und Verwalten von INI-Konfigurationsdateien.
+Dieses Modul wird als **Plugin** bereitgestellt. Weitere Informationen stehen in **Allgemein**.
+
+Es dient zum Lesen, Schreiben und Verwalten von INI-Konfigurationsdateien.
 
 `ini.Load` lädt eine INI-Datei in einen internen Arbeitsspeicher. Die weiteren Funktionen arbeiten mit diesem geladenen Zustand.
 

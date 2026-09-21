@@ -1,6 +1,8 @@
 # 🔑 pgp.* – PGP-Kryptografiefunktionen
 
-Dient zur Erzeugung, Verwaltung und Verwendung von OpenPGP-Schlüsseln für Verschlüsselung und digitale Signaturen.
+Dieses Modul wird als **Plugin** bereitgestellt. Weitere Informationen stehen in **Allgemein**.
+
+Es dient zur Erzeugung, Verwaltung und Verwendung von OpenPGP-Schlüsseln für Verschlüsselung und digitale Signaturen.
 Schlüssel werden im ASCII-Armor-Format gespeichert und verarbeitet.
 Alle Schreiboperationen sind atomar (temp-Datei + Rename). Private Keys werden mit Rechten `0600` gespeichert.
 

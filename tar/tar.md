@@ -1,6 +1,8 @@
 # 📦 tar.* – TAR- & TAR.GZ-Archivfunktionen
 
-Dient zum Erstellen, Entpacken, Inspizieren und Bearbeiten von TAR- und komprimierten TAR.GZ-Archiven.
+Dieses Modul wird als **Plugin** bereitgestellt. Weitere Informationen stehen in **Allgemein**.
+
+Es dient zum Erstellen, Entpacken, Inspizieren und Bearbeiten von TAR- und komprimierten TAR.GZ-Archiven.
 Schützt gegen Path-Traversal (Zip-Slip-Äquivalent) bei allen Entpack-Operationen.
 
 ---

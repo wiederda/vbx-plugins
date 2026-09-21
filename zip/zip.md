@@ -1,6 +1,8 @@
 # 🗜️ zip.* – Archivfunktionen
 
-Dient zum Erstellen, Entpacken und Inspizieren von ZIP-Archiven.
+Dieses Modul wird als **Plugin** bereitgestellt. Weitere Informationen stehen in **Allgemein**.
+
+Es dient zum Erstellen, Entpacken und Inspizieren von ZIP-Archiven.
 Unterstützt optionale Passwortverschlüsselung, Verzeichnisstruktur-Erhalt und atomares Schreiben.
 
 ---

@@ -1,6 +1,8 @@
 # 🖼️ steg.* – Steganografie-Funktionen
 
-Dient zum verdeckten Einbetten und Extrahieren von Daten in Bilddateien mittels **LSB-Steganografie** (Least Significant Bit).
+Dieses Modul wird als **Plugin** bereitgestellt. Weitere Informationen stehen in **Allgemein**.
+
+Es dient zum verdeckten Einbetten und Extrahieren von Daten in Bilddateien mittels **LSB-Steganografie** (Least Significant Bit).
 
 Unterstützte Bildformate:
 
