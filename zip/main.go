@@ -6,11 +6,13 @@ import (
 	"os"
 	"path/filepath"
 	"strings"
+	"unicode/utf8"
 	"unsafe"
 
 	"encoding/json"
 
 	zip "github.com/alexmullins/zip"
+	"golang.org/x/text/encoding/charmap"
 )
 
 // ------------------------------------------------------------
@@ -45,6 +47,25 @@ func dealloc(ptr uint32, size uint32) {
 //go:wasmexport vbx_abi_version
 func vbxABIVersion() uint32 {
 	return 1
+}
+
+func decodeZipName(f *zip.File) string {
+	// Bit 11 (0x800) zeigt an, dass der Name bereits UTF-8 ist
+	if f.Flags&0x800 != 0 {
+		return f.Name
+	}
+
+	if utf8.ValidString(f.Name) {
+		return f.Name
+	}
+
+	// Name ist kein gültiges UTF-8 -> vermutlich CP437 (klassische ZIP-Kodierung)
+	decoded, err := charmap.CodePage437.NewDecoder().String(f.Name)
+	if err != nil {
+		return f.Name
+	}
+
+	return decoded
 }
 
 // ------------------------------------------------------------
@@ -274,6 +295,14 @@ func vbxDescribe() uint64 {
 			Params:      "zipPath, files... [, password]",
 			Description: "Erstellt ein ZIP-Archiv mit erhaltener Verzeichnisstruktur.",
 		},
+
+		{
+			Namespace:   "zip",
+			Name:        "IsValid",
+			Params:      "zipPath",
+			Description: "Prüft, ob eine Datei ein gültiges ZIP-Archiv ist (Inhalt, nicht nur Dateiendung).",
+		},
+
 		{
 			Namespace:   "zip",
 			Name:        "CreateFlat",
@@ -348,6 +377,9 @@ func vbxCall(
 
 	case "Create":
 		return packBytes(handleCreate(args))
+
+	case "IsValid":
+		return packBytes(handleIsValid(args))
 
 	case "CreateFlat":
 		return packBytes(handleCreateFlat(args))
@@ -515,7 +547,7 @@ func handleExists(args []jsonValue) []byte {
 	entryName = filepath.ToSlash(entryName)
 
 	for _, f := range r.File {
-		if f.Name == entryName {
+		if decodeZipName(f) == entryName {
 			return boolResult(true)
 		}
 	}
@@ -568,7 +600,7 @@ func handleList(args []jsonValue) []byte {
 			Map: map[string]jsonValue{
 				"Name": {
 					Type: "str",
-					Str:  f.Name,
+					Str:  decodeZipName(f),
 				},
 				"Size": {
 					Type: "num",
@@ -587,6 +619,41 @@ func handleList(args []jsonValue) []byte {
 	}
 
 	return arrayResult(results)
+}
+
+// ------------------------------------------------------------
+// IsValid
+// ------------------------------------------------------------
+
+func handleIsValid(args []jsonValue) []byte {
+
+	if len(args) < 1 {
+		return errorResult(
+			"zip.IsValid: Erwartet zipPath.",
+		)
+	}
+
+	zipPath, err := getStringArg(args, 0, "zip.IsValid", true)
+
+	if err != nil {
+		return errorResult(err.Error())
+	}
+
+	absP, err := absPathStrict(zipPath)
+
+	if err != nil {
+		return errorResult(err.Error())
+	}
+
+	r, err := zip.OpenReader(absP)
+
+	if err != nil {
+		return boolResult(false)
+	}
+
+	defer r.Close()
+
+	return boolResult(true)
 }
 
 func handleListNames(args []jsonValue) []byte {
@@ -627,7 +694,7 @@ func handleListNames(args []jsonValue) []byte {
 	for _, f := range r.File {
 		names = append(names, jsonValue{
 			Type: "str",
-			Str:  f.Name,
+			Str:  decodeZipName(f),
 		})
 	}
 
@@ -855,7 +922,8 @@ func zipExtract(zipPath, dest, password string) error {
 			f.SetPassword(password)
 		}
 
-		targetPath := filepath.Join(absDest, f.Name)
+		entryName := decodeZipName(f)
+		targetPath := filepath.Join(absDest, entryName)
 
 		if !strings.HasPrefix(filepath.Clean(targetPath)+string(os.PathSeparator), destPrefix) {
 			return fmt.Errorf("zip-slip erkannt: '%s' liegt außerhalb des zielordners", f.Name)
