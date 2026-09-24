@@ -207,9 +207,10 @@ func itoa(n int) string {
 // ------------------------------------------------------------
 
 type vaultEntry struct {
-	Name       string `json:"name"`
-	IV         string `json:"iv"`
-	Ciphertext string `json:"ciphertext"`
+	NameIV         string `json:"name_iv"`
+	NameCiphertext string `json:"name_ciphertext"`
+	IV             string `json:"iv"`
+	Ciphertext     string `json:"ciphertext"`
 }
 
 type vaultContainer struct {
@@ -444,16 +445,30 @@ func handleAdd(args []jsonValue) []byte {
 		return errorResult("Schlüssel konnte nicht abgeleitet werden: " + err.Error())
 	}
 
-	iv, ct, err := encryptValue(key, value)
+	nameIV, nameCT, err := encryptValue(key, name)
+	if err != nil {
+		return errorResult("Name-Verschlüsselung fehlgeschlagen: " + err.Error())
+	}
+
+	valIV, valCT, err := encryptValue(key, value)
 	if err != nil {
 		return errorResult("Verschlüsselung fehlgeschlagen: " + err.Error())
 	}
 
+	// Duplikat-Check: Namen müssen entschlüsselt und verglichen werden,
+	// da sie jetzt nicht mehr im Klartext vorliegen.
 	updated := false
 	for i, e := range c.Entries {
-		if e.Name == name {
-			c.Entries[i].IV = iv
-			c.Entries[i].Ciphertext = ct
+		existingName, decErr := decryptValue(key, e.NameIV, e.NameCiphertext)
+		if decErr != nil {
+			// Falsches Passwort o.ä. -> Eintrag kann nicht zugeordnet werden, überspringen
+			continue
+		}
+		if existingName == name {
+			c.Entries[i].NameIV = nameIV
+			c.Entries[i].NameCiphertext = nameCT
+			c.Entries[i].IV = valIV
+			c.Entries[i].Ciphertext = valCT
 			updated = true
 			break
 		}
@@ -461,9 +476,10 @@ func handleAdd(args []jsonValue) []byte {
 
 	if !updated {
 		c.Entries = append(c.Entries, vaultEntry{
-			Name:       name,
-			IV:         iv,
-			Ciphertext: ct,
+			NameIV:         nameIV,
+			NameCiphertext: nameCT,
+			IV:             valIV,
+			Ciphertext:     valCT,
 		})
 	}
 
@@ -509,12 +525,15 @@ func handleGet(args []jsonValue) []byte {
 	}
 
 	for _, e := range c.Entries {
-		if e.Name == name {
+		existingName, decErr := decryptValue(key, e.NameIV, e.NameCiphertext)
+		if decErr != nil {
+			continue
+		}
+		if existingName == name {
 			pt, err := decryptValue(key, e.IV, e.Ciphertext)
 			if err != nil {
 				return errorResult("Entschlüsselung fehlgeschlagen (falsches Master-Passwort?): " + err.Error())
 			}
-
 			return strResult(pt)
 		}
 	}
@@ -536,11 +555,8 @@ func handleDelete(args []jsonValue) []byte {
 		return errB
 	}
 
-	// master wird hier nicht gebraucht (Löschen erfordert keine
-	// Entschlüsselung), aber als Argument erzwungen, damit
-	// versehentliches Löschen ohne Kenntnis des Master-Passworts
-	// nicht möglich ist.
-	if _, errB := requireStr(args, 1, "Delete"); errB != nil {
+	master, errB := requireStr(args, 1, "Delete")
+	if errB != nil {
 		return errB
 	}
 
@@ -554,11 +570,17 @@ func handleDelete(args []jsonValue) []byte {
 		return errorResult("Vault konnte nicht gelesen werden: " + err.Error())
 	}
 
+	key, err := deriveKey(master, c.Salt)
+	if err != nil {
+		return errorResult("Schlüssel konnte nicht abgeleitet werden: " + err.Error())
+	}
+
 	newEntries := make([]vaultEntry, 0, len(c.Entries))
 	found := false
 
 	for _, e := range c.Entries {
-		if e.Name == name {
+		existingName, decErr := decryptValue(key, e.NameIV, e.NameCiphertext)
+		if decErr == nil && existingName == name {
 			found = true
 			continue
 		}
@@ -566,7 +588,7 @@ func handleDelete(args []jsonValue) []byte {
 	}
 
 	if !found {
-		return errorResult("Eintrag nicht gefunden: " + name)
+		return errorResult("Eintrag nicht gefunden (falsches Master-Passwort oder Name unbekannt): " + name)
 	}
 
 	c.Entries = newEntries
@@ -583,11 +605,16 @@ func handleDelete(args []jsonValue) []byte {
 // ------------------------------------------------------------
 
 func handleList(args []jsonValue) []byte {
-	if len(args) < 1 {
-		return errorResult("List erwartet 1 Argument (datei)")
+	if len(args) < 2 {
+		return errorResult("List erwartet 2 Argumente (datei, master)")
 	}
 
 	path, errB := requireStr(args, 0, "List")
+	if errB != nil {
+		return errB
+	}
+
+	master, errB := requireStr(args, 1, "List")
 	if errB != nil {
 		return errB
 	}
@@ -597,9 +624,18 @@ func handleList(args []jsonValue) []byte {
 		return errorResult("Vault konnte nicht gelesen werden: " + err.Error())
 	}
 
-	vals := make([]jsonValue, len(c.Entries))
-	for i, e := range c.Entries {
-		vals[i] = jsonValue{Type: "str", Str: e.Name}
+	key, err := deriveKey(master, c.Salt)
+	if err != nil {
+		return errorResult("Schlüssel konnte nicht abgeleitet werden: " + err.Error())
+	}
+
+	vals := make([]jsonValue, 0, len(c.Entries))
+	for _, e := range c.Entries {
+		name, decErr := decryptValue(key, e.NameIV, e.NameCiphertext)
+		if decErr != nil {
+			return errorResult("Entschlüsselung fehlgeschlagen (falsches Master-Passwort?): " + decErr.Error())
+		}
+		vals = append(vals, jsonValue{Type: "str", Str: name})
 	}
 
 	return arrResult(vals)
