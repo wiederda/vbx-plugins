@@ -222,8 +222,14 @@ func vbxDescribe() uint64 {
 		{
 			Namespace:   pluginNamespace,
 			Name:        "ReadText",
-			Params:      "pfad [, tabellenMarker]",
+			Params:      "pfad [, tabellenMarker] [, markdown]",
 			Description: "Liest den Text eines DOCX- oder ODT-Dokuments.",
+		},
+		{
+			Namespace:   pluginNamespace,
+			Name:        "Convert",
+			Params:      "quelle, ziel",
+			Description: "Konvertiert ein Dokument zwischen DOCX und ODT (Richtung ergibt sich aus den Endungen).",
 		},
 		{
 			Namespace:   pluginNamespace,
@@ -323,6 +329,9 @@ func vbxCall(namePtr, nameLen, argsPtr, argsLen uint32) uint64 {
 	switch name {
 	case "ReadText":
 		result = handleReadText(args)
+
+	case "Convert":
+		result = handleConvert(args)
 
 	case "Tables":
 		result = handleTables(args)
