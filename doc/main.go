@@ -1001,6 +1001,11 @@ func handleHeading(args []jsonValue) []byte {
 
 	level := int(lv)
 
+	underline, err := getBoolArg(args, 2, fn, false)
+	if err != nil {
+		return errorResult(err.Error())
+	}
+
 	if float64(level) != lv || level < 1 || level > 3 {
 		return errorResult(
 			fn + ": Ebene muss 1, 2 oder 3 sein",
@@ -1010,9 +1015,10 @@ func handleHeading(args []jsonValue) []byte {
 	d := curDoc()
 
 	d.blocks = append(d.blocks, docBlock{
-		kind:  "h",
-		level: level,
-		text:  text,
+		kind:      "h",
+		level:     level,
+		text:      text,
+		underline: underline,
 	})
 
 	return boolResult(true)
@@ -1408,7 +1414,7 @@ func buildDocx(d *docState) ([]byte, error) {
 						`<w:pStyle w:val="Heading%d"/>`,
 						bl.level,
 					),
-					"",
+					docxRPr(false, false, bl.underline),
 				),
 			)
 
@@ -1970,12 +1976,19 @@ func buildOdt(d *docState) ([]byte, error) {
 		switch bl.kind {
 
 		case "h":
+			inner := odtInline(bl.text)
+
+			if name := odtSpanStyle(false, false, bl.underline); name != "" && inner != "" {
+				usedSpans[name] = true
+				inner = `<text:span text:style-name="` + name + `">` + inner + `</text:span>`
+			}
+
 			fmt.Fprintf(
 				&body,
 				`<text:h text:style-name="Heading_20_%d" text:outline-level="%d">%s</text:h>`,
 				bl.level,
 				bl.level,
-				odtInline(bl.text),
+				inner,
 			)
 
 		case "p":
