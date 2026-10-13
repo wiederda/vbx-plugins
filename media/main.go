@@ -1187,6 +1187,60 @@ func silenceFilter(thresholdDB int, durationSec float64) string {
 		"areverse"
 }
 
+// hasAttachedPic prüft, ob die Datei ein eingebettetes Cover hat
+// (M4A/M4B/MP3). Echte Videostreams zählen nicht.
+func hasAttachedPic(input string) bool {
+	result, err := ffmpegExec([]string{"-hide_banner", "-i", input})
+	if err != nil {
+		return false
+	}
+	return strings.Contains(result.Stderr, "(attached pic)")
+}
+
+func mp3ConvertArgs(
+	input, output string,
+	bitrate int,
+	filter string,
+	withCover bool,
+) []string {
+
+	args := []string{"-y", "-i", input}
+
+	if withCover {
+		args = append(args,
+			"-map", "0:a:0",
+			"-map", "0:v:0",
+			"-c:v", "copy",
+			"-disposition:v:0", "attached_pic",
+			"-metadata:s:v", "title=Album cover",
+			"-metadata:s:v", "comment=Cover (front)",
+		)
+	} else {
+		args = append(args, "-vn")
+	}
+
+	args = append(args,
+		"-map_metadata", "0",
+		"-id3v2_version", "3",
+		"-codec:a", "libmp3lame",
+		"-b:a", strconv.Itoa(bitrate)+"k",
+	)
+
+	if filter != "" {
+		args = append(args, "-af", filter)
+	}
+
+	return append(args, output)
+}
+
+func isCoverSource(ext string) bool {
+	switch strings.ToLower(ext) {
+	case ".mp3", ".m4a", ".m4b":
+		return true
+	}
+	return false
+}
+
 // ============================================================
 // media.ToMP3(input, output, [bitrate], [trimSilence])
 // ============================================================
@@ -1257,28 +1311,13 @@ func handleToMP3(
 		}
 	}
 
-	ffmpegArgs := []string{
-		"-y",
-		"-i",
-		input,
-		"-vn",
-		"-codec:a",
-		"libmp3lame",
-		"-b:a",
-		strconv.Itoa(bitrate) + "k",
-	}
-
+	filter := ""
 	if trimSilence {
-		ffmpegArgs = append(
-			ffmpegArgs,
-			"-af",
-			silenceFilter(silenceThreshold, silenceDuration),
-		)
+		filter = silenceFilter(silenceThreshold, silenceDuration)
 	}
 
-	ffmpegArgs = append(
-		ffmpegArgs,
-		output,
+	ffmpegArgs := mp3ConvertArgs(
+		input, output, bitrate, filter, hasAttachedPic(input),
 	)
 
 	result, err := ffmpegExec(
@@ -1345,19 +1384,11 @@ func handleTrimSilence(
 		}
 	}
 
-	ffmpegArgs := []string{
-		"-y",
-		"-i",
-		input,
-		"-vn",
-		"-af",
+	ffmpegArgs := mp3ConvertArgs(
+		input, output, 192,
 		silenceFilter(silenceThreshold, silenceDuration),
-		"-codec:a",
-		"libmp3lame",
-		"-b:a",
-		"192k",
-		output,
-	}
+		hasAttachedPic(input),
+	)
 
 	result, err := ffmpegExec(
 		ffmpegArgs,
@@ -2021,8 +2052,8 @@ func handleIsCover(args []jsonValue) []byte {
 
 	_, _, mediaExt := splitMediaPath(file)
 
-	if strings.ToLower(mediaExt) != ".mp3" {
-		return errorResult("media.IsCover unterstützt aktuell nur MP3-Dateien")
+	if !isCoverSource(mediaExt) {
+		return errorResult("media.IsCover unterstützt nur MP3-, M4A- und M4B-Dateien")
 	}
 
 	result, err := ffmpegExec([]string{
@@ -2736,9 +2767,9 @@ func handleGetCover(
 		file,
 	)
 
-	if strings.ToLower(mediaExt) != ".mp3" {
+	if !isCoverSource(mediaExt) {
 		return errorResult(
-			"media.GetCover unterstützt aktuell nur MP3-Dateien",
+			"media.GetCover unterstützt nur MP3-, M4A- und M4B-Dateien",
 		)
 	}
 
@@ -2818,7 +2849,8 @@ func vbxDescribe() uint64 {
 			Namespace: "media",
 			Name:      "ToMP3",
 			Params:    "input, output, [bitrate], [trimSilence]",
-			Description: "Konvertiert eine Audio- oder Videodatei nach MP3. " +
+			Description: "Konvertiert eine Audio- oder Videodatei nach MP3 (z. B. M4A). " +
+				"Ein eingebettetes Cover wird übernommen. " +
 				"Mit trimSilence=True werden Stille am Anfang und Ende entfernt.",
 		},
 
@@ -2854,7 +2886,7 @@ func vbxDescribe() uint64 {
 			Namespace:   "media",
 			Name:        "IsCover",
 			Params:      "file",
-			Description: "Prüft, ob eine MP3-Datei ein eingebettetes Cover hat.",
+			Description: "Prüft, ob eine MP3-, M4A- oder M4B-Datei ein eingebettetes Cover hat.",
 		},
 
 		{
@@ -2924,7 +2956,7 @@ func vbxDescribe() uint64 {
 			Namespace:   "media",
 			Name:        "GetCover",
 			Params:      "file, output",
-			Description: "Extrahiert das eingebettete Cover einer MP3-Datei als JPG-Datei.",
+			Description: "Extrahiert das eingebettete Cover einer MP3-, M4A- oder M4B-Datei als JPG-Datei.",
 		},
 	}
 
