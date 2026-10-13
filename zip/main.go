@@ -1,15 +1,15 @@
 package main
 
 import (
+	"encoding/json"
 	"fmt"
 	"io"
 	"os"
+	pathpkg "path"
 	"path/filepath"
 	"strings"
 	"unicode/utf8"
 	"unsafe"
-
-	"encoding/json"
 
 	zip "github.com/alexmullins/zip"
 	"golang.org/x/text/encoding/charmap"
@@ -309,12 +309,14 @@ func vbxDescribe() uint64 {
 			Params:      "zipPath, files... [, password]",
 			Description: "Erstellt ein ZIP-Archiv ohne Unterordner (alle Dateien auf oberster Ebene).",
 		},
+
 		{
 			Namespace:   "zip",
 			Name:        "Extract",
-			Params:      "zipPath, dest [, password]",
-			Description: "Entpackt ein Archiv. Schützt gegen Zip-Slip durch Pfad-Validierung.",
+			Params:      "zipPath, dest [, password|stripComponents] [, stripComponents]",
+			Description: "Entpackt ein ZIP-Archiv. Optional können führende Verzeichnisebenen entfernt werden. Schützt gegen Zip-Slip.",
 		},
+
 		{
 			Namespace:   "zip",
 			Name:        "Exists",
@@ -464,7 +466,6 @@ func handleCreateInternal(
 // ------------------------------------------------------------
 
 func handleExtract(args []jsonValue) []byte {
-
 	if len(args) < 2 {
 		return errorResult(
 			"zip.Extract: Erwartet mindestens zipPath und dest.",
@@ -472,29 +473,59 @@ func handleExtract(args []jsonValue) []byte {
 	}
 
 	zipPath, err := getStringArg(args, 0, "zip.Extract", true)
-
 	if err != nil {
 		return errorResult(err.Error())
 	}
 
 	dest, err := getStringArg(args, 1, "zip.Extract", true)
-
 	if err != nil {
 		return errorResult(err.Error())
 	}
 
-	pass, err := getStringArg(args, 2, "zip.Extract", false)
+	password := ""
+	stripComponents := 0
 
-	if err != nil {
-		return errorResult(err.Error())
+	if len(args) >= 3 {
+		switch args[2].Type {
+		case "str":
+			password = args[2].Str
+
+		case "num":
+			if args[2].Num < 0 ||
+				args[2].Num != float64(int(args[2].Num)) {
+				return errorResult(
+					"zip.Extract: stripComponents muss eine nichtnegative Ganzzahl sein.",
+				)
+			}
+			stripComponents = int(args[2].Num)
+
+		default:
+			return errorResult(
+				"zip.Extract: Argument 3 muss ein Passwort oder eine Zahl sein.",
+			)
+		}
 	}
 
-	if err := zipExtract(zipPath, dest, pass); err != nil {
+	if len(args) >= 4 {
+		if args[2].Type != "str" || args[3].Type != "num" {
+			return errorResult(
+				"zip.Extract: Argument 4 ist nur mit einem Passwort als Argument 3 erlaubt.",
+			)
+		}
+
+		if args[3].Num < 0 ||
+			args[3].Num != float64(int(args[3].Num)) {
+			return errorResult(
+				"zip.Extract: stripComponents muss eine nichtnegative Ganzzahl sein.",
+			)
+		}
+
+		stripComponents = int(args[3].Num)
+	}
+
+	if err := zipExtract(zipPath, dest, password, stripComponents); err != nil {
 		return errorResult(
-			fmt.Sprintf(
-				"zip.Extract: %v",
-				err,
-			),
+			fmt.Sprintf("zip.Extract: %v", err),
 		)
 	}
 
@@ -897,7 +928,11 @@ func zipCreate(zipPath string, paths []string, password string, flat bool) (int,
 	return fileCount, nil
 }
 
-func zipExtract(zipPath, dest, password string) error {
+func zipExtract(zipPath, dest, password string, stripComponents int) error {
+	if stripComponents < 0 {
+		return fmt.Errorf("stripComponents darf nicht negativ sein")
+	}
+
 	absZip, err := absPathStrict(zipPath)
 	if err != nil {
 		return err
@@ -914,19 +949,59 @@ func zipExtract(zipPath, dest, password string) error {
 	}
 	defer r.Close()
 
+	if err := os.MkdirAll(absDest, 0755); err != nil {
+		return fmt.Errorf("zielordner konnte nicht erstellt werden: %w", err)
+	}
+
 	buf := make([]byte, 1024*1024)
-	destPrefix := filepath.Clean(absDest) + string(os.PathSeparator)
 
 	for _, f := range r.File {
 		if password != "" {
 			f.SetPassword(password)
 		}
 
-		entryName := decodeZipName(f)
-		targetPath := filepath.Join(absDest, entryName)
+		entryName := strings.ReplaceAll(decodeZipName(f), "\\", "/")
 
-		if !strings.HasPrefix(filepath.Clean(targetPath)+string(os.PathSeparator), destPrefix) {
-			return fmt.Errorf("zip-slip erkannt: '%s' liegt außerhalb des zielordners", f.Name)
+		// Absolute Pfade und Laufwerksangaben ablehnen.
+		if strings.HasPrefix(entryName, "/") ||
+			(len(entryName) >= 2 &&
+				((entryName[0] >= 'A' && entryName[0] <= 'Z') ||
+					(entryName[0] >= 'a' && entryName[0] <= 'z')) &&
+				entryName[1] == ':') {
+			return fmt.Errorf("ungültiger absoluter Archivpfad: '%s'", entryName)
+		}
+
+		entryName = pathpkg.Clean(entryName)
+
+		if entryName == "." || entryName == "" {
+			continue
+		}
+
+		// Traversal vor dem Entfernen der Ebenen erkennen.
+		if entryName == ".." || strings.HasPrefix(entryName, "../") {
+			return fmt.Errorf("zip-slip erkannt: '%s'", entryName)
+		}
+
+		parts := strings.Split(entryName, "/")
+
+		if len(parts) <= stripComponents {
+			// Der Eintrag besteht nur aus den zu entfernenden Ebenen.
+			continue
+		}
+
+		entryName = strings.Join(parts[stripComponents:], "/")
+		targetPath := filepath.Join(absDest, filepath.FromSlash(entryName))
+
+		// Zielpfad gegen den Zielordner prüfen.
+		rel, err := filepath.Rel(absDest, targetPath)
+		if err != nil {
+			return fmt.Errorf("zielpfad konnte nicht geprüft werden: %w", err)
+		}
+
+		if rel == ".." ||
+			filepath.IsAbs(rel) ||
+			strings.HasPrefix(rel, ".."+string(os.PathSeparator)) {
+			return fmt.Errorf("zip-slip erkannt: '%s' liegt außerhalb des Zielordners", entryName)
 		}
 
 		if f.FileInfo().IsDir() {
@@ -940,7 +1015,11 @@ func zipExtract(zipPath, dest, password string) error {
 			return fmt.Errorf("elternverzeichnis für '%s' konnte nicht erstellt werden: %w", targetPath, err)
 		}
 
-		outFile, err := os.OpenFile(targetPath, os.O_WRONLY|os.O_CREATE|os.O_TRUNC, f.Mode())
+		outFile, err := os.OpenFile(
+			targetPath,
+			os.O_WRONLY|os.O_CREATE|os.O_TRUNC,
+			f.Mode(),
+		)
 		if err != nil {
 			return fmt.Errorf("datei '%s' konnte nicht erstellt werden: %w", targetPath, err)
 		}

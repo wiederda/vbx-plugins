@@ -39,15 +39,18 @@ Unterstützt optionale Passwortverschlüsselung, Verzeichnisstruktur-Erhalt und 
 
 ---
 
-## zip.Extract(zipPath, dest [, password])
+## zip.Extract(zipPath, dest [, password|stripComponents] [, stripComponents])
+
 - **Konkret:**
-  Entpackt ein ZIP-Archiv in ein Zielverzeichnis.
-  Erstellt fehlende Unterverzeichnisse automatisch.
-  Schützt gegen Zip-Slip: Pfade außerhalb des Zielverzeichnisses werden abgewiesen.
+    Entpackt ein ZIP-Archiv in ein Zielverzeichnis. Erstellt fehlende Unterverzeichnisse automatisch. Schützt gegen Zip-Slip: Pfade außerhalb des Zielverzeichnisses werden abgewiesen. Optional können führende Verzeichnisebenen aus den Archivpfaden entfernt werden.
 - **Parameter:**
-  - `zipPath`: Pfad zum Archiv.
+  - `zipPath`: Pfad zum ZIP-Archiv.
   - `dest`: Zielverzeichnis.
   - `password`: Optional. Passwort für verschlüsselte Archive.
+  - `stripComponents`: Optional. Nichtnegative Ganzzahl, die angibt, wie viele führende Pfadkomponenten jedes Archiveintrags entfernt werden.
+
+  Bei `stripComponents = 1` wird beispielsweise aus `test-0.6.1-windows-x64-portable/Test.exe` der Zielpfad `ziel/Test.exe`.
+
 - **Rückgabe:**
   `NullVal` bei Erfolg, `ErrorVal` bei Fehler.
 
