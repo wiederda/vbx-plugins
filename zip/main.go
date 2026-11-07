@@ -49,6 +49,42 @@ func vbxABIVersion() uint32 {
 	return 1
 }
 
+// autoStripCount liefert die Anzahl der Verzeichnisebenen, die ALLE
+// Dateien im Archiv gemeinsam haben (0, wenn es keinen gemeinsamen Ordner gibt).
+// autoStripCount liefert die Anzahl der Verzeichnisebenen, die ALLE
+// Dateien im Archiv gemeinsam haben (0, wenn es keinen gemeinsamen Ordner gibt).
+func autoStripCount(files []*zip.File) int {
+	var common []string
+	first := true
+
+	for _, f := range files {
+		if f.FileInfo().IsDir() {
+			continue // Ordnereinträge würden die Tiefe verfälschen
+		}
+
+		name := pathpkg.Clean(strings.ReplaceAll(decodeZipName(f), "\\", "/"))
+		parts := strings.Split(name, "/")
+		dirs := parts[:len(parts)-1] // Dateiname selbst wird nie entfernt
+
+		if first {
+			common = dirs
+			first = false
+		} else {
+			n := 0
+			for n < len(common) && n < len(dirs) && common[n] == dirs[n] {
+				n++
+			}
+			common = common[:n]
+		}
+
+		if len(common) == 0 {
+			return 0
+		}
+	}
+
+	return len(common)
+}
+
 func decodeZipName(f *zip.File) string {
 	// Bit 11 (0x800) zeigt an, dass der Name bereits UTF-8 ist
 	if f.Flags&0x800 != 0 {
@@ -313,8 +349,8 @@ func vbxDescribe() uint64 {
 		{
 			Namespace:   "zip",
 			Name:        "Extract",
-			Params:      "zipPath, dest [, password|stripComponents] [, stripComponents]",
-			Description: "Entpackt ein ZIP-Archiv. Optional können führende Verzeichnisebenen entfernt werden. Schützt gegen Zip-Slip.",
+			Params:      `zipPath, dest [, password|stripComponents|"auto"] [, stripComponents|"auto"]`,
+			Description: `Entpackt ein ZIP-Archiv. stripComponents entfernt führende Verzeichnisebenen, höchstens aber so viele, wie alle Einträge gemeinsam haben. "auto" entfernt so viele wie möglich. Schützt gegen Zip-Slip.`,
 		},
 
 		{
@@ -484,46 +520,54 @@ func handleExtract(args []jsonValue) []byte {
 
 	password := ""
 	stripComponents := 0
+	autoStrip := false
 
-	if len(args) >= 3 {
-		switch args[2].Type {
-		case "str":
-			password = args[2].Str
+	isAuto := func(v jsonValue) bool {
+		return v.Type == "str" && strings.EqualFold(v.Str, "auto")
+	}
 
-		case "num":
-			if args[2].Num < 0 ||
-				args[2].Num != float64(int(args[2].Num)) {
-				return errorResult(
-					"zip.Extract: stripComponents muss eine nichtnegative Ganzzahl sein.",
-				)
-			}
-			stripComponents = int(args[2].Num)
-
-		default:
-			return errorResult(
-				"zip.Extract: Argument 3 muss ein Passwort oder eine Zahl sein.",
-			)
+	parseStrip := func(v jsonValue) error {
+		if isAuto(v) {
+			autoStrip = true
+			return nil
 		}
+		if v.Type != "num" || v.Num < 0 || v.Num != float64(int(v.Num)) {
+			return fmt.Errorf(`zip.Extract: stripComponents muss eine nichtnegative Ganzzahl oder "auto" sein.`)
+		}
+		stripComponents = int(v.Num)
+		return nil
 	}
 
 	if len(args) >= 4 {
-		if args[2].Type != "str" || args[3].Type != "num" {
+		// (zip, dest, password, stripComponents|"auto")
+		if args[2].Type != "str" {
 			return errorResult(
 				"zip.Extract: Argument 4 ist nur mit einem Passwort als Argument 3 erlaubt.",
 			)
 		}
+		password = args[2].Str
 
-		if args[3].Num < 0 ||
-			args[3].Num != float64(int(args[3].Num)) {
+		if err := parseStrip(args[3]); err != nil {
+			return errorResult(err.Error())
+		}
+	} else if len(args) == 3 {
+		switch {
+		case isAuto(args[2]):
+			autoStrip = true
+		case args[2].Type == "str":
+			password = args[2].Str
+		case args[2].Type == "num":
+			if err := parseStrip(args[2]); err != nil {
+				return errorResult(err.Error())
+			}
+		default:
 			return errorResult(
-				"zip.Extract: stripComponents muss eine nichtnegative Ganzzahl sein.",
+				`zip.Extract: Argument 3 muss ein Passwort, eine Zahl oder "auto" sein.`,
 			)
 		}
-
-		stripComponents = int(args[3].Num)
 	}
 
-	if err := zipExtract(zipPath, dest, password, stripComponents); err != nil {
+	if err := zipExtract(zipPath, dest, password, stripComponents, autoStrip); err != nil {
 		return errorResult(
 			fmt.Sprintf("zip.Extract: %v", err),
 		)
@@ -928,7 +972,7 @@ func zipCreate(zipPath string, paths []string, password string, flat bool) (int,
 	return fileCount, nil
 }
 
-func zipExtract(zipPath, dest, password string, stripComponents int) error {
+func zipExtract(zipPath, dest, password string, stripComponents int, autoStrip bool) error {
 	if stripComponents < 0 {
 		return fmt.Errorf("stripComponents darf nicht negativ sein")
 	}
@@ -948,6 +992,16 @@ func zipExtract(zipPath, dest, password string, stripComponents int) error {
 		return fmt.Errorf("archiv '%s' konnte nicht geöffnet werden: %w", absZip, err)
 	}
 	defer r.Close()
+
+	// "auto" = so viel wie möglich; feste Zahl = höchstens so viel,
+	// wie als gemeinsame Verzeichnistiefe tatsächlich vorhanden ist.
+	if autoStrip {
+		stripComponents = autoStripCount(r.File)
+	} else if stripComponents > 0 {
+		if maxCommon := autoStripCount(r.File); stripComponents > maxCommon {
+			stripComponents = maxCommon
+		}
+	}
 
 	if err := os.MkdirAll(absDest, 0755); err != nil {
 		return fmt.Errorf("zielordner konnte nicht erstellt werden: %w", err)

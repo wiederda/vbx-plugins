@@ -39,20 +39,48 @@ Unterstützt optionale Passwortverschlüsselung, Verzeichnisstruktur-Erhalt und 
 
 ---
 
-## zip.Extract(zipPath, dest [, password|stripComponents] [, stripComponents])
+## zip.Extract(zipPath, dest [, password] [, stripComponents|"auto"])
 
 - **Konkret:**
-    Entpackt ein ZIP-Archiv in ein Zielverzeichnis. Erstellt fehlende Unterverzeichnisse automatisch. Schützt gegen Zip-Slip: Pfade außerhalb des Zielverzeichnisses werden abgewiesen. Optional können führende Verzeichnisebenen aus den Archivpfaden entfernt werden.
+  Entpackt ein ZIP-Archiv in ein Zielverzeichnis. Erstellt das Zielverzeichnis und fehlende Unterverzeichnisse automatisch. Schützt gegen Zip-Slip: Pfade außerhalb des Zielverzeichnisses werden abgewiesen.
+  Optional können führende Verzeichnisebenen aus den Archivpfaden entfernt werden. Dabei wird nie mehr entfernt, als alle Dateien im Archiv tatsächlich gemeinsam haben. Dadurch läuft ein zu hoher Wert nicht ins Leere und es werden keine Inhalte verschiedener Wurzelordner vermischt.
 - **Parameter:**
   - `zipPath`: Pfad zum ZIP-Archiv.
   - `dest`: Zielverzeichnis.
   - `password`: Optional. Passwort für verschlüsselte Archive.
-  - `stripComponents`: Optional. Nichtnegative Ganzzahl, die angibt, wie viele führende Pfadkomponenten jedes Archiveintrags entfernt werden.
+  - `stripComponents`: Optional. Nichtnegative Ganzzahl: Maximale Anzahl führender Pfadkomponenten, die von jedem Archiveintrag entfernt werden. Wird auf die gemeinsame Verzeichnistiefe aller Dateien im Archiv begrenzt.
+  - `"auto"`: Optional, statt einer Zahl. Entfernt so viele Ebenen wie möglich, also die gesamte gemeinsame Verzeichnistiefe. Gibt es keinen gemeinsamen Ordner, wird nichts entfernt.
+- **Aufrufkonventionen:**
+  - `zip.Extract(zip, dest)`
+  - `zip.Extract(zip, dest, password)`
+  - `zip.Extract(zip, dest, stripComponents)`
+  - `zip.Extract(zip, dest, "auto")`
+  - `zip.Extract(zip, dest, password, stripComponents)`
+  - `zip.Extract(zip, dest, password, "auto")`
+- **Beispiele für `stripComponents`:**
+
+  | Archivinhalt                 | `0` | `1`          | `2`          | `"auto"`     |
+  |------------------------------|-----|--------------|--------------|--------------|
+  | `Test.exe`                   | `Test.exe` | `Test.exe` | `Test.exe` | `Test.exe` |
+  | `app-1.0/Test.exe`           | `app-1.0/Test.exe` | `Test.exe` | `Test.exe` | `Test.exe` |
+  | `app-1.0/bin/Test.exe`       | `app-1.0/bin/Test.exe` | `bin/Test.exe` | `Test.exe` | `Test.exe` |
+  | `a/x.txt` und `b/y.txt`      | unverändert | unverändert | unverändert | unverändert |
 
   Bei `stripComponents = 1` wird beispielsweise aus `test-0.6.1-windows-x64-portable/Test.exe` der Zielpfad `ziel/Test.exe`.
-
+- **Hinweis:**
+  Ein Passwort, das exakt `auto` lautet, wird als Modus interpretiert. In diesem Fall das Passwort mit einem zweiten Argument übergeben: `zip.Extract(z, d, "auto", 0)`.
 - **Rückgabe:**
   `NullVal` bei Erfolg, `ErrorVal` bei Fehler.
+
+- **Beispiel:**
+
+```vbnet
+  ' Entfernt den Wurzelordner, falls vorhanden – funktioniert für jedes ZIP
+  zip.Extract("C:\test\app.zip", "C:\test\app", "auto")
+
+  ' Mit Passwort und höchstens einer Ebene
+  zip.Extract("archiv.zip", "ziel", "geheim", 1)
+```
 
 ---
 
